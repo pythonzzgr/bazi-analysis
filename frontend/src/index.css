@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* Design tokens from Banking Dashboard (Design 1 & 2) */
+:root {
+  /* Core Colors */
+  --primary: #137fec;
+  --background-light: #f6f7f8;
+  --background-dark: #101922;
+  
+  /* Semantic Colors (Mapped to current app) */
+  --bg-page: var(--background-dark); /* Defaulting to Dark Mode as per Design 1 */
+  --bg-app: var(--background-dark);
+  --bg-panel: #1a2632; /* Slightly lighter than bg-dark */
+  --bg-card: rgba(19, 127, 236, 0.1); /* Glass effect base */
+  --bg-input: #1e2936;
+  --bg-segment: #1e2936;
+  
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-body: #e2e8f0;
+  
+  --border-light: rgba(255, 255, 255, 0.1);
+  --border-medium: rgba(255, 255, 255, 0.2);
+  
+  --accent-blue: #137fec;
+  --accent-blue-hover: #0b63c1;
+  --accent-gray: #64748b;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --shadow-subtle: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+
+  /* Element Colors (Neon/Vibrant for Dark Mode) */
+  --el-wood: #4ade80;  /* Green */
+  --el-fire: #f87171;  /* Red */
+  --el-earth: #fbbf24; /* Amber */
+  --el-metal: #94a3b8; /* Slate */
+  --el-water: #60a5fa; /* Blue */
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", "Apple SD Gothic Neo", "Pretendard", "AppleGothic", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  min-height: 100vh;
+  font-feature-settings: "ss01", "cv01";
+  letter-spacing: -0.01em;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Transitions */
+input,
+select,
+button,
+a,
+div {
+  transition: all 0.25s ease;
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-blue);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.45s ease forwards;
+}
+
+/* Glass Card Effect from Design 1 */
+.glass-card {
+  background: rgba(19, 127, 236, 0.1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.apple-input {
+  background-color: var(--bg-input);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+.apple-input:focus {
+  background-color: #1e2936;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
+.segmented-control {
+  background-color: var(--bg-segment);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  display: flex;
+}
+
+.segmented-item {
+  flex: 1;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.segmented-item.active {
+  background-color: #2d3b4e;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.segmented-item.inactive {
+  color: var(--text-secondary);
+}
+.segmented-item.inactive:hover {
+  color: var(--text-primary);
+}
