@@ -30,6 +30,9 @@ out/
 # 프론트엔드 빌드 결과 (backend에서 서빙)
 backend/static/
 
+# Database
+backend/users.db
+
 # Docker
 qdrant_data/
 

@@ -1,15 +1,9 @@
 /**
- * 로컬 JSON 기반 인증 시스템
- * localStorage에 계정 정보와 세션을 저장합니다.
+ * 백엔드 API 기반 인증 시스템
+ * 회원가입 → 관리자 이메일 승인 → 로그인 가능
  */
 
-export interface User {
-  id: string;
-  username: string;
-  displayName: string;
-  passwordHash: string;
-  createdAt: string;
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export interface SessionUser {
   id: string;
@@ -17,108 +11,54 @@ export interface SessionUser {
   displayName: string;
 }
 
-const USERS_KEY = "saju-users";
 const SESSION_KEY = "saju-session";
 
-// 간단한 해시 (로컬 전용이므로 보안용이 아닌 난독화 용도)
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash + char) | 0;
-  }
-  // 추가 라운드로 해시 강화
-  const salt = "saju-destiny-compass";
-  for (let i = 0; i < salt.length; i++) {
-    const char = salt.charCodeAt(i);
-    hash = ((hash << 5) - hash + char) | 0;
-  }
-  return Math.abs(hash).toString(36) + str.length.toString(36);
-}
-
-function getUsers(): User[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as User[];
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(users: User[]): void {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-export function register(
+export async function register(
   username: string,
   password: string,
   displayName: string
-): { success: boolean; error?: string; user?: SessionUser } {
-  const users = getUsers();
+): Promise<{ success: boolean; error?: string; pendingApproval?: boolean }> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, displayName }),
+    });
 
-  // 유효성 검사
-  if (!username.trim() || username.length < 2) {
-    return { success: false, error: "아이디는 2자 이상이어야 합니다." };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.detail || "회원가입에 실패했습니다." };
+    }
+
+    return { success: true, pendingApproval: true };
+  } catch {
+    return { success: false, error: "서버에 연결할 수 없습니다." };
   }
-  if (!password || password.length < 4) {
-    return { success: false, error: "비밀번호는 4자 이상이어야 합니다." };
-  }
-  if (!displayName.trim()) {
-    return { success: false, error: "이름을 입력해주세요." };
-  }
-
-  // 중복 확인
-  if (users.find((u) => u.username === username.trim())) {
-    return { success: false, error: "이미 사용 중인 아이디입니다." };
-  }
-
-  const newUser: User = {
-    id: crypto.randomUUID(),
-    username: username.trim(),
-    displayName: displayName.trim(),
-    passwordHash: simpleHash(password),
-    createdAt: new Date().toISOString(),
-  };
-
-  users.push(newUser);
-  saveUsers(users);
-
-  // 자동 로그인
-  const sessionUser: SessionUser = {
-    id: newUser.id,
-    username: newUser.username,
-    displayName: newUser.displayName,
-  };
-  localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
-
-  return { success: true, user: sessionUser };
 }
 
-export function login(
+export async function login(
   username: string,
   password: string
-): { success: boolean; error?: string; user?: SessionUser } {
-  const users = getUsers();
+): Promise<{ success: boolean; error?: string; user?: SessionUser }> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
 
-  const user = users.find((u) => u.username === username.trim());
-  if (!user) {
-    return { success: false, error: "존재하지 않는 아이디입니다." };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.detail || "로그인에 실패했습니다." };
+    }
+
+    const data = await res.json();
+    const sessionUser: SessionUser = data.user;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
+    return { success: true, user: sessionUser };
+  } catch {
+    return { success: false, error: "서버에 연결할 수 없습니다." };
   }
-
-  if (user.passwordHash !== simpleHash(password)) {
-    return { success: false, error: "비밀번호가 일치하지 않습니다." };
-  }
-
-  const sessionUser: SessionUser = {
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-  };
-  localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
-
-  return { success: true, user: sessionUser };
 }
 
 export function logout(): void {

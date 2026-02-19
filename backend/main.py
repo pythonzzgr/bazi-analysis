@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 # .env 로드
@@ -27,6 +27,7 @@ from saju.analyzer import full_analysis, analysis_to_text
 from saju.calculator import get_leap_month_for_year
 from agent.chat import SajuChatAgent
 from rag.embedder import embed_documents, COLLECTION_NAME
+from auth import init_db, register_user, login_user, approve_user
 
 # ─────── 설정 ───────
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
@@ -39,8 +40,10 @@ agent = SajuChatAgent(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """서버 시작 시 Qdrant 임베딩 초기화"""
+    """서버 시작 시 DB 초기화 + Qdrant 임베딩 초기화"""
     print("[Server] Starting up...")
+    init_db()
+    print("[Server] User DB initialized.")
     try:
         from qdrant_client import QdrantClient
         qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5)
@@ -115,6 +118,73 @@ class StreamRequest(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str = Field(..., description="세션 ID")
     message: str = Field(..., description="사용자 메시지")
+
+
+# ─────── 인증 모델 ───────
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., description="아이디")
+    password: str = Field(..., description="비밀번호")
+    displayName: str = Field(..., description="표시 이름")
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., description="아이디")
+    password: str = Field(..., description="비밀번호")
+
+
+# ─────── 인증 API ───────
+
+@app.post("/api/auth/register")
+async def api_register(req: RegisterRequest):
+    result = register_user(req.username, req.password, req.displayName)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.post("/api/auth/login")
+async def api_login(req: LoginRequest):
+    result = login_user(req.username, req.password)
+    if not result["success"]:
+        raise HTTPException(status_code=401, detail=result["error"])
+    return result
+
+
+@app.get("/api/auth/approve/{token}")
+async def api_approve(token: str):
+    success, user_info = approve_user(token)
+    if success and user_info:
+        html = f"""\
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f1f5f9;">
+  <div style="background:white;border-radius:20px;padding:48px;text-align:center;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+    <div style="width:64px;height:64px;border-radius:50%;background:#10b981;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
+      <svg width="32" height="32" fill="none" viewBox="0 0 24 24"><path stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+    </div>
+    <h2 style="color:#1e293b;margin:0 0 8px;">승인 완료</h2>
+    <p style="color:#64748b;margin:0 0 4px;font-size:15px;"><b>{user_info['display_name']}</b>님의 가입이 승인되었습니다.</p>
+    <p style="color:#94a3b8;font-size:13px;">아이디: {user_info['username']}</p>
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html)
+    else:
+        html = """\
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f1f5f9;">
+  <div style="background:white;border-radius:20px;padding:48px;text-align:center;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+    <div style="width:64px;height:64px;border-radius:50%;background:#ef4444;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
+      <svg width="32" height="32" fill="none" viewBox="0 0 24 24"><path stroke="white" stroke-width="3" stroke-linecap="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </div>
+    <h2 style="color:#1e293b;margin:0 0 8px;">유효하지 않은 링크</h2>
+    <p style="color:#64748b;font-size:15px;">이미 처리되었거나 잘못된 승인 링크입니다.</p>
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html, status_code=400)
 
 
 # ─────── API 엔드포인트 ───────
