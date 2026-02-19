@@ -9,9 +9,7 @@ import os
 import json as _json
 import sqlite3
 import secrets
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
@@ -452,28 +450,21 @@ def get_chat_messages(analysis_id: str) -> list[dict]:
     return [{"role": r["role"], "content": r["content"], "createdAt": r["created_at"]} for r in rows]
 
 
-# ─────── 이메일 ───────
+# ─────── 이메일 (Resend HTTP API) ───────
 
 def _send_approval_email(username: str, display_name: str, token: str):
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_pass = os.getenv("SMTP_PASS")
+    resend_api_key = os.getenv("RESEND_API_KEY")
     admin_email = os.getenv("ADMIN_EMAIL")
+    from_email = os.getenv("FROM_EMAIL", "onboarding@resend.dev")
     app_url = os.getenv("APP_URL", "http://localhost:5000")
 
-    if not all([smtp_host, smtp_user, smtp_pass, admin_email]):
-        print(f"[Auth] SMTP 미설정. 승인 토큰({username}): {token}")
+    if not resend_api_key or not admin_email:
+        print(f"[Auth] Resend API 키 미설정. 승인 토큰({username}): {token}")
         print(f"[Auth] 수동 승인 URL: {app_url}/api/auth/approve/{token}")
         return
 
     approve_link = f"{app_url}/api/auth/approve/{token}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[사주 분석] 새 회원가입 승인 요청 - {display_name}"
-    msg["From"] = smtp_user
-    msg["To"] = admin_email
 
     html = f"""\
 <html>
@@ -491,14 +482,25 @@ def _send_approval_email(username: str, display_name: str, token: str):
 </body>
 </html>"""
 
-    msg.attach(MIMEText(html, "html"))
+    payload = _json.dumps({
+        "from": from_email,
+        "to": [admin_email],
+        "subject": f"[사주 분석] 새 회원가입 승인 요청 - {display_name}",
+        "html": html,
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {resend_api_key}",
+            "Content-Type": "application/json",
+        },
+    )
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        print(f"[Auth] 승인 요청 이메일 발송 완료: {username}")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"[Auth] 승인 요청 이메일 발송 완료 (Resend): {username}")
     except Exception as e:
         print(f"[Auth] 이메일 발송 실패: {e}")
         print(f"[Auth] 수동 승인 URL: {app_url}/api/auth/approve/{token}")
