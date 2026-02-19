@@ -188,41 +188,44 @@ export default function ResultDashboard({ analysis, messages, onSendMessage, isL
           
           <div className="glass-card rounded-3xl flex-1 flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700 shadow-lg">
             <div className="flex-1 overflow-y-auto p-5 space-y-5" ref={scrollRef}>
-              {messages.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm ${
-                    msg.role === 'user' 
-                      ? 'bg-primary text-white rounded-br-none' 
-                      : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-bl-none'
-                  }`}>
-                    {msg.role === 'user' ? (
-                      <p>{msg.content}</p>
-                    ) : (
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          strong: ({ children }) => <strong className="font-semibold text-slate-900 dark:text-white">{children}</strong>,
-                          em: ({ children }) => <em className="italic">{children}</em>,
-                          p: ({ children }) => <p className="mb-3 last:mb-0 leading-[1.8]">{children}</p>,
-                          ul: ({ children }) => <ul className="list-disc pl-4 my-2 space-y-1">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal pl-4 my-2 space-y-1">{children}</ol>,
-                          li: ({ children }) => <li className="leading-[1.8]">{children}</li>,
-                          h1: ({ children }) => <p className="font-semibold text-slate-900 dark:text-white mb-3 mt-4">{children}</p>,
-                          h2: ({ children }) => <p className="font-semibold text-slate-900 dark:text-white mb-3 mt-4">{children}</p>,
-                          h3: ({ children }) => <p className="font-semibold text-slate-900 dark:text-white mb-2 mt-3">{children}</p>,
-                          hr: () => <div className="my-4" />,
-                          blockquote: ({ children }) => <div className="pl-3 border-l-2 border-slate-300 dark:border-slate-600 my-2 text-slate-500 dark:text-slate-400">{children}</div>,
-                          code: ({ children }) => <span>{children}</span>,
-                          a: ({ children, href }) => <a href={href} className="text-primary underline" target="_blank" rel="noopener noreferrer">{children}</a>,
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
-                    )}
+              {messages.map((msg, idx) => {
+                if (msg.role === 'assistant' && !msg.content) return null;
+                return (
+                  <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm ${
+                      msg.role === 'user' 
+                        ? 'bg-primary text-white rounded-br-none' 
+                        : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-bl-none'
+                    }`}>
+                      {msg.role === 'user' ? (
+                        <p>{msg.content}</p>
+                      ) : (
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            strong: ({ children }) => <strong className="font-semibold text-slate-900 dark:text-white">{children}</strong>,
+                            em: ({ children }) => <em className="italic">{children}</em>,
+                            p: ({ children }) => <p className="mb-3 last:mb-0 leading-[1.8]">{children}</p>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 my-2 space-y-1">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 my-2 space-y-1">{children}</ol>,
+                            li: ({ children }) => <li className="leading-[1.8]">{children}</li>,
+                            h1: ({ children }) => <p className="font-semibold text-slate-900 dark:text-white mb-3 mt-4">{children}</p>,
+                            h2: ({ children }) => <p className="font-semibold text-slate-900 dark:text-white mb-3 mt-4">{children}</p>,
+                            h3: ({ children }) => <p className="font-semibold text-slate-900 dark:text-white mb-2 mt-3">{children}</p>,
+                            hr: () => <div className="my-4" />,
+                            blockquote: ({ children }) => <div className="pl-3 border-l-2 border-slate-300 dark:border-slate-600 my-2 text-slate-500 dark:text-slate-400">{children}</div>,
+                            code: ({ children }) => <span>{children}</span>,
+                            a: ({ children, href }) => <a href={href} className="text-primary underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {isLoading && (
+                );
+              })}
+              {isLoading && (messages.length === 0 || messages[messages.length - 1].role === 'user' || !messages[messages.length - 1].content) && (
                 <div className="flex justify-start">
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl rounded-bl-none p-4 flex gap-1.5">
                     <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>

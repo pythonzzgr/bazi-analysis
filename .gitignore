@@ -27,6 +27,9 @@ out/
 *.swp
 *.swo
 
+# 프론트엔드 빌드 결과 (backend에서 서빙)
+backend/static/
+
 # Docker
 qdrant_data/
 

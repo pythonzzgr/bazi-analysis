@@ -1,5 +1,5 @@
 // 브라우저에서 직접 백엔드 호출 (Next.js rewrite proxy 타임아웃 문제 회피)
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export interface AnalyzeRequest {
   name: string;
@@ -129,17 +129,11 @@ export interface AnalysisData {
 export interface AnalyzeResponse {
   session_id: string;
   analysis: AnalysisData;
-  interpretation: string;
-}
-
-export interface ChatResponse {
-  reply: string;
-  session_id: string;
 }
 
 export async function analyzeSaju(data: AnalyzeRequest): Promise<AnalyzeResponse> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180_000); // 3분 타임아웃
+  const timeout = setTimeout(() => controller.abort(), 60_000);
 
   try {
     const res = await fetch(`${API_BASE}/analyze`, {
@@ -163,31 +157,73 @@ export async function analyzeSaju(data: AnalyzeRequest): Promise<AnalyzeResponse
   }
 }
 
-export async function chatWithAgent(
-  sessionId: string,
-  message: string
-): Promise<ChatResponse> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000); // 2분 타임아웃
+async function processSSEStream(
+  res: Response,
+  onDelta: (text: string) => void,
+): Promise<void> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
 
-  try {
-    const res = await fetch(`${API_BASE}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "대화 처리 중 오류가 발생했습니다.");
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    while (true) {
+      const newlineIdx = buffer.indexOf("\n");
+      if (newlineIdx === -1) break;
+
+      const line = buffer.slice(0, newlineIdx);
+      buffer = buffer.slice(newlineIdx + 1);
+
+      if (line.startsWith("data: ")) {
+        const payload = line.slice(6);
+        if (payload === "[DONE]") return;
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.delta) onDelta(parsed.delta);
+        } catch (e) {
+          if (e instanceof Error && e.message !== "") throw e;
+        }
+      }
     }
-    return res.json();
-  } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") {
-      throw new Error("응답 시간이 초과되었습니다. 다시 시도해주세요.");
-    }
-    throw e;
-  } finally {
-    clearTimeout(timeout);
   }
+}
+
+export async function streamReading(
+  sessionId: string,
+  onDelta: (text: string) => void,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/stream/reading`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "해석 생성 중 오류가 발생했습니다.");
+  }
+  if (!res.body) throw new Error("스트리밍 응답을 받을 수 없습니다.");
+  await processSSEStream(res, onDelta);
+}
+
+export async function streamChat(
+  sessionId: string,
+  message: string,
+  onDelta: (text: string) => void,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/stream/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, message }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "대화 처리 중 오류가 발생했습니다.");
+  }
+  if (!res.body) throw new Error("스트리밍 응답을 받을 수 없습니다.");
+  await processSSEStream(res, onDelta);
 }

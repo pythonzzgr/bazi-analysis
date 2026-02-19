@@ -5,9 +5,10 @@ OpenAI GPT 기반 대화 에이전트로, 사주 분석 결과를 자연어로 �
 
 import os
 from datetime import datetime
+from typing import Generator
 from openai import OpenAI
 
-from ..rag.retriever import retrieve_for_analysis
+from rag.retriever import retrieve_for_analysis
 
 
 def _build_system_prompt() -> str:
@@ -56,11 +57,12 @@ def _build_system_prompt() -> str:
 
 [후속 질문 답변 규칙]
 
-1. 사주 데이터를 근거로 구체적이고 명확하게 답변하세요. "~일 수 있습니다" 같은 애매한 말은 하지 마세요.
-2. "사람마다 달라요", "상황에 따라 다릅니다" 같은 일반론은 쓰지 마세요. 이 사람 사주에 맞는 이야기만 하세요.
-3. 연애든 직업이든 건강이든, 사주의 오행과 용신을 근거로 딱 잘라 말해주세요.
-4. "올해"를 언급할 때는 반드시 {current_year}년 세운 데이터를 참조하세요.
-5. 답변도 줄글로 자연스럽게 써주세요. 목록이나 헤딩 쓰지 마세요."""
+1. 질문에 대한 답변만 명료하게 2문단 이내로 작성하세요. 질문과 관련 없는 내용은 절대 덧붙이지 마세요.
+2. 사주 데이터를 근거로 구체적이고 명확하게 답변하세요. "~일 수 있습니다" 같은 애매한 말은 하지 마세요.
+3. "사람마다 달라요", "상황에 따라 다릅니다" 같은 일반론은 쓰지 마세요. 이 사람 사주에 맞는 이야기만 하세요.
+4. 연애든 직업이든 건강이든, 사주의 오행과 용신을 근거로 딱 잘라 말해주세요.
+5. "올해"를 언급할 때는 반드시 {current_year}년 세운 데이터를 참조하세요.
+6. 답변도 줄글로 자연스럽게 써주세요. 목록이나 헤딩 쓰지 마세요."""
 
 
 class SajuChatAgent:
@@ -112,39 +114,41 @@ class SajuChatAgent:
             "messages": [],  # user/assistant 메시지만 저장
         }
 
-    def get_initial_reading(self, session_id: str) -> str:
-        """첫 사주 해석을 생성합니다."""
+    def get_initial_reading_stream(self, session_id: str) -> Generator[str, None, None]:
+        """첫 사주 해석을 스트리밍으로 생성합니다."""
         if session_id not in self.sessions:
-            return "세션을 찾을 수 없습니다."
+            yield "세션을 찾을 수 없습니다."
+            return
 
         session = self.sessions[session_id]
-
         user_msg = "위의 사주 분석 결과를 바탕으로 종합적인 사주 해석을 해주세요."
 
-        response = self.client.responses.create(
+        stream = self.client.responses.create(
             model="gpt-5.2",
             instructions=session["instructions"],
             input=[{"role": "user", "content": user_msg}],
+            stream=True,
             temperature=0.7,
             max_output_tokens=3000,
         )
 
-        assistant_msg = response.output_text
+        full_text = ""
+        for event in stream:
+            if event.type == "response.output_text.delta":
+                full_text += event.delta
+                yield event.delta
 
-        # 대화 이력 저장
         session["messages"].append({"role": "user", "content": "사주 해석을 해주세요."})
-        session["messages"].append({"role": "assistant", "content": assistant_msg})
+        session["messages"].append({"role": "assistant", "content": full_text})
 
-        return assistant_msg
-
-    def chat(self, session_id: str, user_message: str) -> str:
-        """후속 대화를 처리합니다."""
+    def chat_stream(self, session_id: str, user_message: str) -> Generator[str, None, None]:
+        """후속 대화를 스트리밍으로 처리합니다."""
         if session_id not in self.sessions:
-            return "세션을 찾을 수 없습니다. 먼저 사주 분석을 진행해주세요."
+            yield "세션을 찾을 수 없습니다. 먼저 사주 분석을 진행해주세요."
+            return
 
         session = self.sessions[session_id]
 
-        # RAG 보강: 사용자 질문에 관련된 방법론 검색
         try:
             extra_context = ""
             from ..rag.retriever import retrieve
@@ -161,14 +165,13 @@ class SajuChatAgent:
         except Exception:
             extra_context = ""
 
-        # 현재 연도 정보
         now = datetime.now()
         current_year = now.year
 
-        # 사주 데이터 리마인드 + RAG 컨텍스트를 포함한 메시지 구성
         saju_reminder = f"""[사용자 질문] {user_message}
 
 [지시사항] 오늘은 {now.strftime("%Y년 %m월 %d일")}, 올해는 {current_year}년입니다.
+질문에 대한 답변만 명료하게 2문단 이내로 작성하세요. 질문과 관련 없는 내용은 덧붙이지 마세요.
 사주 데이터를 근거로 구체적이고 명확하게 답변하세요. 애매한 표현은 쓰지 마세요.
 줄글로 자연스럽게 쓰세요. 목록, 헤딩(#), 수평선(---) 쓰지 마세요. 볼드는 핵심 한두 곳만 쓰세요."""
 
@@ -177,23 +180,26 @@ class SajuChatAgent:
 
         session["messages"].append({"role": "user", "content": saju_reminder})
 
-        # 대화 이력이 너무 길면 최근 메시지만 유지
         recent = session["messages"]
         if len(recent) > 20:
             recent = recent[-20:]
 
-        response = self.client.responses.create(
+        stream = self.client.responses.create(
             model="gpt-5.2",
             instructions=session["instructions"],
             input=recent,
+            stream=True,
             temperature=0.5,
             max_output_tokens=2000,
         )
 
-        assistant_msg = response.output_text
-        session["messages"].append({"role": "assistant", "content": assistant_msg})
+        full_text = ""
+        for event in stream:
+            if event.type == "response.output_text.delta":
+                full_text += event.delta
+                yield event.delta
 
-        return assistant_msg
+        session["messages"].append({"role": "assistant", "content": full_text})
 
     def has_session(self, session_id: str) -> bool:
         return session_id in self.sessions

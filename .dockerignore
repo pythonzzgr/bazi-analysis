@@ -1,0 +1,13 @@
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+backend/static/
+backend/__pycache__/
+.venv/
+venv/
+.git/
+.env
+*.pyc
+qdrant_data/
+.DS_Store
