@@ -163,11 +163,8 @@ def init_db():
                 ("subscription_expires_at", "NULL"),
                 ("updated_at", "NULL"),
             ]:
-                try:
-                    typ = "BOOLEAN" if col.startswith("is_l") else "TEXT" if col in ("gender", "subscription_expires_at", "updated_at") else "INTEGER"
-                    _execute(conn, f"ALTER TABLE users ADD COLUMN {col} {typ} DEFAULT {default}")
-                except Exception:
-                    pass
+                typ = "BOOLEAN" if col.startswith("is_l") else "TEXT" if col in ("gender", "subscription_expires_at", "updated_at") else "INTEGER"
+                _execute(conn, f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {typ} DEFAULT {default}")
         else:
             existing = {r["name"] for r in _fetchall(conn, "PRAGMA table_info(users)")}
             migrations = [
