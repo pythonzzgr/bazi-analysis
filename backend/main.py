@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     print("[Server] Starting up...")
     try:
         from qdrant_client import QdrantClient
-        qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5)
         collections = qc.get_collections().collections
         names = [c.name for c in collections]
 

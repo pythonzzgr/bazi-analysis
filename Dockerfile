@@ -4,7 +4,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN NEXT_PUBLIC_API_URL=/api npm run build
 
 # Stage 2: Python 백엔드 + 정적 파일 서빙
 FROM python:3.12-slim
