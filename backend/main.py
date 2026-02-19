@@ -115,6 +115,7 @@ class AnalyzeResponse(BaseModel):
 
 class StreamRequest(BaseModel):
     session_id: str = Field(..., description="세션 ID")
+    analysis_id: str = Field("", description="분석 ID (DB 저장용)")
 
 
 class ChatRequest(BaseModel):
@@ -317,10 +318,18 @@ async def stream_reading(request: StreamRequest):
     if not agent.has_session(request.session_id):
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
 
+    analysis_id = request.analysis_id
+
     def generate():
         try:
+            full_response = []
             for chunk in agent.get_initial_reading_stream(request.session_id):
+                full_response.append(chunk)
                 yield _sse_event({"delta": chunk})
+
+            if analysis_id:
+                save_chat_message(analysis_id, "assistant", "".join(full_response))
+
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield _sse_event({"error": str(e)})

@@ -198,11 +198,12 @@ async function processSSEStream(
 export async function streamReading(
   sessionId: string,
   onDelta: (text: string) => void,
+  analysisId?: string,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/stream/reading`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({ session_id: sessionId, analysis_id: analysisId || "" }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

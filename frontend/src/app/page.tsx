@@ -75,7 +75,7 @@ export default function Home() {
           updated[updated.length - 1] = { ...last, content: last.content + delta };
           return updated;
         });
-      });
+      }, response.analysis_id);
 
       refreshHistory();
     } catch (err) {
