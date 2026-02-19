@@ -203,3 +203,57 @@ class SajuChatAgent:
 
     def has_session(self, session_id: str) -> bool:
         return session_id in self.sessions
+
+    def generate_daily_fortune(self, analysis_text: str, name: str, gender: str) -> dict:
+        """사주 기반 오늘의 운세를 생성합니다 (바나프레소 스타일)."""
+        now = datetime.now()
+        today_str = now.strftime("%Y년 %m월 %d일")
+        weekday_names = ["월", "화", "수", "목", "금", "토", "일"]
+        weekday = weekday_names[now.weekday()]
+
+        prompt = f"""당신은 사주 전문가입니다. 아래 사주 분석 데이터를 바탕으로 오늘({today_str} {weekday}요일)의 운세를 작성해주세요.
+
+{analysis_text}
+
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요:
+{{
+  "luck_index": (1~100 사이 정수, 오늘의 행운지수),
+  "fortune": "(2~3문장으로 오늘의 전체 운세. 따뜻하고 구체적으로)",
+  "love": "(1문장, 연애/대인관계 운)",
+  "work": "(1문장, 직업/학업 운)",
+  "health": "(1문장, 건강 운)",
+  "lucky_color": "(오늘의 행운 색상, 한글 1단어)",
+  "lucky_number": (1~99 사이 정수, 오늘의 행운 숫자),
+  "lucky_item": "(오늘의 행운 아이템, 한글 1~2단어)",
+  "warning": "(1문장, 오늘 주의할 점)"
+}}"""
+
+        import json as _json
+        response = self.client.responses.create(
+            model="gpt-5.2",
+            instructions="사주 전문가로서 오늘의 운세를 JSON 형식으로 작성합니다. JSON만 출력하세요.",
+            input=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_output_tokens=500,
+        )
+
+        raw = response.output_text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            raw = raw.rsplit("```", 1)[0]
+
+        try:
+            fortune_data = _json.loads(raw)
+        except _json.JSONDecodeError:
+            fortune_data = {
+                "luck_index": 50,
+                "fortune": raw[:200],
+                "love": "", "work": "", "health": "",
+                "lucky_color": "", "lucky_number": 7, "lucky_item": "",
+                "warning": "",
+            }
+
+        fortune_data["date"] = today_str
+        fortune_data["weekday"] = weekday
+        fortune_data["name"] = name
+        return fortune_data

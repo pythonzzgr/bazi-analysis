@@ -8,7 +8,8 @@ import {
   Mountain, 
   Circle, 
   Leaf,
-  ArrowLeft
+  ArrowLeft,
+  Lock
 } from 'lucide-react';
 import type { AnalysisData } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
@@ -20,6 +21,7 @@ interface Props {
   onSendMessage: (msg: string) => void;
   isLoading: boolean;
   onGoBack: () => void;
+  canChat?: boolean;
 }
 
 const ELEMENT_COLORS: Record<string, string> = {
@@ -46,7 +48,7 @@ const ELEMENT_ICONS: Record<string, typeof Leaf> = {
   '수': Droplets,
 };
 
-export default function ResultDashboard({ analysis, messages, onSendMessage, isLoading, onGoBack }: Props) {
+export default function ResultDashboard({ analysis, messages, onSendMessage, isLoading, onGoBack, canChat = true }: Props) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -236,25 +238,34 @@ export default function ResultDashboard({ analysis, messages, onSendMessage, isL
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="추가 질문을 입력하세요..."
-                  className="w-full pl-4 pr-12 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                  disabled={isLoading}
-                />
-                <button 
-                  type="submit"
-                  disabled={isLoading || !input.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary disabled:opacity-50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                >
-                  <Send size={18} />
-                </button>
+            {canChat ? (
+              <form onSubmit={handleSubmit} className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="추가 질문을 입력하세요..."
+                    className="w-full pl-4 pr-12 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                    disabled={isLoading}
+                  />
+                  <button 
+                    type="submit"
+                    disabled={isLoading || !input.trim()}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary disabled:opacity-50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                  >
+                    <Send size={18} />
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
+                <div className="flex items-center justify-center gap-2 py-3 text-slate-400">
+                  <Lock size={14} />
+                  <span className="text-xs">추가 질문은 후원자(user+) 전용 기능입니다</span>
+                </div>
               </div>
-            </form>
+            )}
           </div>
         </section>
       </div>

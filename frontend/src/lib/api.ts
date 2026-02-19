@@ -1,4 +1,3 @@
-// 브라우저에서 직접 백엔드 호출 (Next.js rewrite proxy 타임아웃 문제 회피)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export interface AnalyzeRequest {
@@ -128,10 +127,13 @@ export interface AnalysisData {
 
 export interface AnalyzeResponse {
   session_id: string;
+  analysis_id: string;
   analysis: AnalysisData;
 }
 
-export async function analyzeSaju(data: AnalyzeRequest): Promise<AnalyzeResponse> {
+export async function analyzeSaju(
+  data: AnalyzeRequest & { user_id?: string },
+): Promise<AnalyzeResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
@@ -214,11 +216,18 @@ export async function streamChat(
   sessionId: string,
   message: string,
   onDelta: (text: string) => void,
+  userId?: string,
+  analysisId?: string,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/stream/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, message }),
+    body: JSON.stringify({
+      session_id: sessionId,
+      message,
+      user_id: userId || "",
+      analysis_id: analysisId || "",
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -226,4 +235,94 @@ export async function streamChat(
   }
   if (!res.body) throw new Error("스트리밍 응답을 받을 수 없습니다.");
   await processSSEStream(res, onDelta);
+}
+
+export interface DailyFortuneData {
+  date: string;
+  weekday: string;
+  name: string;
+  luck_index: number;
+  fortune: string;
+  love: string;
+  work: string;
+  health: string;
+  lucky_color: string;
+  lucky_number: number;
+  lucky_item: string;
+  warning: string;
+}
+
+export async function getDailyFortune(
+  data: AnalyzeRequest & { user_id: string },
+): Promise<DailyFortuneData> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  try {
+    const res = await fetch(`${API_BASE}/daily-fortune`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "운세 생성 중 오류가 발생했습니다.");
+    }
+    return res.json();
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("요청 시간이 초과되었습니다. 다시 시도해주세요.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ─────── 히스토리 API ───────
+
+export interface HistoryEntry {
+  id: string;
+  name: string;
+  request: AnalyzeRequest;
+  analysis: AnalysisData;
+  messages: { role: string; content: string; createdAt?: string }[];
+  createdAt: string;
+}
+
+export async function fetchHistory(userId: string): Promise<HistoryEntry[]> {
+  try {
+    const res = await fetch(`${API_BASE}/history/${userId}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.history || []).map((h: HistoryEntry) => ({
+      ...h,
+      messages: h.messages || [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchHistoryDetail(analysisId: string): Promise<HistoryEntry | null> {
+  try {
+    const res = await fetch(`${API_BASE}/history/detail/${analysisId}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteHistoryEntry(analysisId: string, userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/history/${analysisId}`, {
+      method: "DELETE",
+      headers: { "X-User-Id": userId },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

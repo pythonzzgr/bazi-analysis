@@ -1,25 +1,31 @@
 import React, { useState } from 'react';
 import { Clock, Trash2, ChevronRight, AlertTriangle } from 'lucide-react';
-import type { HistoryEntry } from '@/lib/history';
-import { deleteHistoryEntry, clearHistory } from '@/lib/history';
+import type { HistoryEntry } from '@/lib/api';
+import { deleteHistoryEntry } from '@/lib/api';
 
 interface Props {
   history: HistoryEntry[];
   onSelect: (entry: HistoryEntry) => void;
   onRefresh: () => void;
+  userId: string;
 }
 
-export default function HistoryPanel({ history, onSelect, onRefresh }: Props) {
+export default function HistoryPanel({ history, onSelect, onRefresh, userId }: Props) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    deleteHistoryEntry(id);
+    setDeletingId(id);
+    await deleteHistoryEntry(id, userId);
+    setDeletingId(null);
     onRefresh();
   };
 
-  const handleClearAll = () => {
-    clearHistory();
+  const handleClearAll = async () => {
+    for (const entry of history) {
+      await deleteHistoryEntry(entry.id, userId);
+    }
     onRefresh();
     setShowClearConfirm(false);
   };
@@ -61,7 +67,6 @@ export default function HistoryPanel({ history, onSelect, onRefresh }: Props) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header Actions */}
       <div className="px-6 py-3 flex items-center justify-between">
         <span className="text-xs text-slate-400 font-medium">{history.length}개의 기록</span>
         {!showClearConfirm ? (
@@ -92,11 +97,10 @@ export default function HistoryPanel({ history, onSelect, onRefresh }: Props) {
         )}
       </div>
 
-      {/* History List */}
       <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3">
         {history.map((entry) => {
           const dayMaster = entry.analysis.eight_characters.day_stem;
-          const msgCount = entry.messages.length;
+          const msgCount = entry.messages?.length || 0;
 
           return (
             <div
@@ -105,7 +109,7 @@ export default function HistoryPanel({ history, onSelect, onRefresh }: Props) {
               tabIndex={0}
               onClick={() => onSelect(entry)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(entry); }}
-              className="w-full text-left glass-card rounded-2xl p-4 border border-slate-200 dark:border-slate-700 hover:border-primary/40 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-all group cursor-pointer"
+              className={`w-full text-left glass-card rounded-2xl p-4 border border-slate-200 dark:border-slate-700 hover:border-primary/40 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-all group cursor-pointer ${deletingId === entry.id ? 'opacity-50' : ''}`}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
@@ -129,6 +133,7 @@ export default function HistoryPanel({ history, onSelect, onRefresh }: Props) {
                 <div className="flex items-center gap-1 shrink-0 ml-3">
                   <button
                     onClick={(e) => handleDelete(e, entry.id)}
+                    disabled={deletingId === entry.id}
                     className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all opacity-0 group-hover:opacity-100"
                     title="삭제"
                   >

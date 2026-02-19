@@ -5,25 +5,22 @@ import InputForm from "@/components/InputForm";
 import ResultDashboard from "@/components/ResultDashboard";
 import HistoryPanel from "@/components/HistoryPanel";
 import AuthPage from "@/components/AuthPage";
+import DailyFortune from "@/components/DailyFortune";
 import {
   analyzeSaju,
   streamReading,
   streamChat,
+  fetchHistory,
+  fetchHistoryDetail,
   type AnalyzeRequest,
   type AnalysisData,
-} from "@/lib/api";
-import {
-  getHistory,
-  saveHistory,
-  updateHistoryMessages,
-  migrateMatchingHistory,
   type HistoryEntry,
-  type Message,
-} from "@/lib/history";
-import { getCurrentUser, logout, type SessionUser } from "@/lib/auth";
-import { History, Plus, LogOut } from "lucide-react";
+} from "@/lib/api";
+import type { Message } from "@/lib/history";
+import { getCurrentUser, logout, isPremium, type SessionUser } from "@/lib/auth";
+import { History, Plus, LogOut, Sun } from "lucide-react";
 
-type Tab = "new" | "history";
+type Tab = "new" | "history" | "fortune";
 type View = "home" | "result";
 
 export default function Home() {
@@ -33,33 +30,26 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("new");
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [sessionId, setSessionId] = useState<string>("");
+  const [analysisId, setAnalysisId] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [historyList, setHistoryList] = useState<HistoryEntry[]>([]);
-  const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null);
   const [currentRequest, setCurrentRequest] = useState<AnalyzeRequest | null>(null);
 
-  // 인증 상태 확인
   useEffect(() => {
     setUser(getCurrentUser());
     setAuthChecked(true);
   }, []);
 
-  // 히스토리 로드
-  const refreshHistory = useCallback(() => {
-    setHistoryList(getHistory());
-  }, []);
+  const refreshHistory = useCallback(async () => {
+    if (!user) return;
+    const list = await fetchHistory(user.id);
+    setHistoryList(list);
+  }, [user]);
 
   useEffect(() => {
     if (user) refreshHistory();
   }, [refreshHistory, user]);
-
-  // 메시지가 변경될 때 히스토리 업데이트
-  useEffect(() => {
-    if (currentHistoryId && messages.length > 0) {
-      updateHistoryMessages(currentHistoryId, messages);
-    }
-  }, [messages, currentHistoryId]);
 
   const handleAnalyze = async (data: AnalyzeRequest) => {
     setIsLoading(true);
@@ -70,24 +60,10 @@ export default function Home() {
     let analysisReceived = false;
 
     try {
-      const response = await analyzeSaju(data);
+      const response = await analyzeSaju({ ...data, user_id: user?.id || "" });
       setSessionId(response.session_id);
+      setAnalysisId(response.analysis_id);
       setAnalysis(response.analysis);
-
-      const historyId = crypto.randomUUID();
-      setCurrentHistoryId(historyId);
-      const entry: HistoryEntry = {
-        id: historyId,
-        name: data.name,
-        createdAt: new Date().toISOString(),
-        request: data,
-        analysis: response.analysis,
-        messages: [],
-        sessionId: response.session_id,
-      };
-      saveHistory(entry);
-      refreshHistory();
-
       analysisReceived = true;
       setView("result");
       setMessages([{ role: "assistant", content: "" }]);
@@ -100,6 +76,8 @@ export default function Home() {
           return updated;
         });
       });
+
+      refreshHistory();
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.";
@@ -117,7 +95,7 @@ export default function Home() {
   };
 
   const handleChat = async (message: string) => {
-    if (!sessionId) return;
+    if (!sessionId || !user) return;
 
     setMessages((prev) => [
       ...prev,
@@ -134,7 +112,7 @@ export default function Home() {
           updated[updated.length - 1] = { ...last, content: last.content + delta };
           return updated;
         });
-      });
+      }, user.id, analysisId);
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.";
@@ -158,24 +136,26 @@ export default function Home() {
     setAnalysis(null);
     setMessages([]);
     setSessionId("");
-    setCurrentHistoryId(null);
+    setAnalysisId("");
     setCurrentRequest(null);
     refreshHistory();
   };
 
-  const handleSelectHistory = (entry: HistoryEntry) => {
+  const handleSelectHistory = async (entry: HistoryEntry) => {
+    const detail = await fetchHistoryDetail(entry.id);
+    const msgs = detail?.messages || [];
     setAnalysis(entry.analysis);
-    setMessages(entry.messages);
-    setSessionId(entry.sessionId);
-    setCurrentHistoryId(entry.id);
+    setMessages(
+      msgs.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+    );
+    setSessionId("");
+    setAnalysisId(entry.id);
     setCurrentRequest(entry.request);
     setView("result");
   };
 
   const handleAuth = (sessionUser: SessionUser) => {
     setUser(sessionUser);
-    // 기존 히스토리 중 가입자 이름과 일치하는 항목 이전
-    migrateMatchingHistory(sessionUser.displayName);
   };
 
   const handleLogout = () => {
@@ -186,12 +166,11 @@ export default function Home() {
     setAnalysis(null);
     setMessages([]);
     setSessionId("");
-    setCurrentHistoryId(null);
+    setAnalysisId("");
     setCurrentRequest(null);
     setHistoryList([]);
   };
 
-  // 인증 상태 확인 중
   if (!authChecked) {
     return (
       <main className="min-h-screen flex items-center justify-center">
@@ -200,7 +179,6 @@ export default function Home() {
     );
   }
 
-  // 로그인 페이지
   if (!user) {
     return (
       <main className="min-h-screen font-sans selection:bg-primary selection:text-white">
@@ -209,29 +187,35 @@ export default function Home() {
     );
   }
 
-  // 결과 화면
   if (view === "result" && analysis) {
     return (
       <main className="min-h-screen font-sans selection:bg-primary selection:text-white">
-        <ResultDashboard 
-          analysis={analysis} 
-          messages={messages} 
+        <ResultDashboard
+          analysis={analysis}
+          messages={messages}
           onSendMessage={handleChat}
           isLoading={isLoading}
           onGoBack={handleGoBack}
+          canChat={isPremium(user)}
         />
       </main>
     );
   }
 
-  // 홈 화면 (탭: 새 분석 / 기록)
   return (
     <main className="min-h-screen font-sans selection:bg-primary selection:text-white flex flex-col">
-      {/* User Header */}
       <div className="flex items-center justify-between px-6 pt-6 pb-1">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          <span className="font-semibold text-slate-700 dark:text-slate-200">{user.displayName}</span>님, 환영합니다
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">{user.displayName}</span>님
+          </p>
+          {user.role === 'admin' && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">ADMIN</span>
+          )}
+          {user.role === 'user+' && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">USER+</span>
+          )}
+        </div>
         <button
           onClick={handleLogout}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400 transition-colors"
@@ -241,7 +225,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Tab Navigation */}
       <div className="pt-2 px-6 pb-2 shrink-0">
         <div className="flex gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/50">
           <button
@@ -271,18 +254,35 @@ export default function Home() {
               </span>
             )}
           </button>
+          {isPremium(user) && (
+            <button
+              onClick={() => { setTab("fortune"); refreshHistory(); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                tab === "fortune"
+                  ? "bg-white dark:bg-slate-700 text-amber-500 shadow-sm"
+                  : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+            >
+              <Sun size={16} />
+              오늘의 운세
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Tab Content */}
-      {tab === "new" ? (
+      {tab === "new" && (
         <InputForm onSubmit={handleAnalyze} isLoading={isLoading} />
-      ) : (
+      )}
+      {tab === "history" && (
         <HistoryPanel
           history={historyList}
           onSelect={handleSelectHistory}
           onRefresh={refreshHistory}
+          userId={user.id}
         />
+      )}
+      {tab === "fortune" && isPremium(user) && (
+        <DailyFortune user={user} history={historyList} />
       )}
     </main>
   );
