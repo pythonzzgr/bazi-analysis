@@ -444,6 +444,208 @@ async def daily_fortune(request: DailyFortuneRequest):
         raise HTTPException(status_code=500, detail=f"운세 생성 중 오류: {str(e)}")
 
 
+# ─────── 공유 페이지 (서버 렌더링) ───────
+
+import zlib
+import base64
+
+def _decode_share_data(encoded: str) -> dict | None:
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        raw = base64.urlsafe_b64decode(padded)
+        decompressed = zlib.decompress(raw)
+        return json.loads(decompressed)
+    except Exception:
+        return None
+
+
+def _render_share_html(data: dict) -> str:
+    share_type = data.get("type", "analysis")
+    title = data.get("title", "사주 분석 결과")
+    app_url = os.getenv("APP_URL", "https://sajugo.shop")
+
+    css = """
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f1f5f9; color:#1e293b; min-height:100vh; }
+    .wrap { max-width:480px; margin:0 auto; padding:24px 16px 40px; }
+    .card { background:white; border-radius:20px; padding:24px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.06); border:1px solid #e2e8f0; }
+    .badge { display:inline-block; padding:4px 12px; border-radius:99px; font-size:11px; font-weight:700; }
+    .pillars { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:16px 0; }
+    .pillar { text-align:center; }
+    .pillar-label { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; font-weight:600; margin-bottom:6px; }
+    .pillar-cell { height:48px; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700; border-radius:12px; background:#f8fafc; border:1px solid #e2e8f0; margin-bottom:4px; }
+    .el-bar { display:flex; align-items:center; gap:12px; padding:8px 0; }
+    .el-name { width:50px; font-size:13px; font-weight:600; }
+    .el-track { flex:1; height:8px; background:#f1f5f9; border-radius:99px; overflow:hidden; }
+    .el-fill { height:100%; border-radius:99px; }
+    .el-pct { width:36px; text-align:right; font-size:12px; font-weight:700; }
+    .el-wood { background:#10b981; } .el-fire { background:#ef4444; } .el-earth { background:#f59e0b; } .el-metal { background:#94a3b8; } .el-water { background:#3b82f6; }
+    .msg { margin-bottom:12px; }
+    .msg-bot { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px 16px 16px 4px; padding:14px; font-size:14px; line-height:1.8; color:#334155; }
+    .msg-user { background:#137FEC; color:white; border-radius:16px 16px 4px 16px; padding:14px; font-size:14px; line-height:1.6; margin-left:auto; max-width:85%; }
+    .luck-circle { width:80px; height:80px; position:relative; }
+    .luck-num { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; }
+    .fortune-row { display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid #f1f5f9; }
+    .fortune-icon { width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+    .fortune-text { font-size:14px; color:#475569; line-height:1.6; }
+    .fortune-label { font-size:11px; font-weight:700; margin-bottom:2px; }
+    .lucky-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center; padding:12px 0; }
+    .lucky-item { font-size:14px; font-weight:700; color:#1e293b; }
+    .lucky-sub { font-size:10px; color:#94a3b8; margin-bottom:4px; }
+    .cta { display:block; text-align:center; padding:14px; background:#137FEC; color:white; text-decoration:none; border-radius:14px; font-weight:700; font-size:15px; margin-top:8px; }
+    .footer { text-align:center; padding:16px 0; font-size:12px; color:#94a3b8; }
+    h2 { font-size:17px; margin-bottom:12px; }
+    """
+
+    body = ""
+
+    if share_type == "analysis":
+        p = data.get("pillars", {})
+        el = data.get("elements", [])
+        reading = data.get("reading", "")
+
+        pillar_html = ""
+        for label, key in [("시주","time"),("일주","day"),("월주","month"),("연주","year")]:
+            pi = p.get(key, {})
+            pillar_html += f"""<div class="pillar">
+                <div class="pillar-label">{label}</div>
+                <div class="pillar-cell">{pi.get('stem','')}</div>
+                <div class="pillar-cell">{pi.get('branch','')}</div>
+            </div>"""
+
+        el_html = ""
+        el_class_map = {"목":"el-wood","화":"el-fire","토":"el-earth","금":"el-metal","수":"el-water"}
+        for e in el:
+            cls = el_class_map.get(e.get("name",""), "el-wood")
+            el_html += f"""<div class="el-bar">
+                <span class="el-name">{e.get('name','')} ({e.get('hanja','')})</span>
+                <div class="el-track"><div class="el-fill {cls}" style="width:{e.get('ratio',0)}%"></div></div>
+                <span class="el-pct">{e.get('ratio',0)}%</span>
+            </div>"""
+
+        reading_html = reading.replace("\n\n", "</p><p style='margin-top:12px;'>").replace("\n", "<br>")
+
+        body = f"""
+        <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <span class="badge" style="background:#EFF6FF;color:#137FEC;">Day Master: {data.get('dayMaster','')}</span>
+                <span style="font-size:12px;color:#94a3b8;">{data.get('strength','')}</span>
+            </div>
+            <h1 style="font-size:22px;font-weight:800;margin:8px 0 4px;">{title}</h1>
+            <p style="font-size:13px;color:#64748b;">용신: {data.get('yongShin','')}</p>
+            <div class="pillars">{pillar_html}</div>
+        </div>
+        <div class="card">
+            <h2>오행 분포</h2>
+            {el_html}
+        </div>
+        <div class="card">
+            <h2>상세 해석</h2>
+            <div style="font-size:14px;line-height:1.8;color:#334155;"><p>{reading_html}</p></div>
+        </div>"""
+
+    elif share_type == "fortune":
+        f = data.get("fortune", {})
+        luck = f.get("luck_index", 50)
+        stroke_len = (luck / 100) * 213.6
+
+        fortune_items = []
+        if f.get("love"): fortune_items.append(("💕","#ec4899","연애/대인관계",f["love"]))
+        if f.get("work"): fortune_items.append(("💼","#3b82f6","직업/학업",f["work"]))
+        if f.get("health"): fortune_items.append(("🏃","#10b981","건강",f["health"]))
+        if f.get("warning"): fortune_items.append(("⚠️","#ef4444","주의사항",f["warning"]))
+
+        items_html = ""
+        for icon, color, label, text in fortune_items:
+            items_html += f"""<div class="fortune-row">
+                <div class="fortune-icon" style="background:{color}15;">{icon}</div>
+                <div><div class="fortune-label" style="color:{color};">{label}</div><div class="fortune-text">{text}</div></div>
+            </div>"""
+
+        lucky_html = ""
+        if f.get("lucky_color"):
+            lucky_html += f'<div><div class="lucky-sub">행운 색상</div><div class="lucky-item">{f["lucky_color"]}</div></div>'
+        if f.get("lucky_number"):
+            lucky_html += f'<div><div class="lucky-sub">행운 숫자</div><div class="lucky-item">{f["lucky_number"]}</div></div>'
+        if f.get("lucky_item"):
+            lucky_html += f'<div><div class="lucky-sub">행운 아이템</div><div class="lucky-item">{f["lucky_item"]}</div></div>'
+
+        luck_color = "#10b981" if luck >= 80 else "#3b82f6" if luck >= 60 else "#f59e0b" if luck >= 40 else "#ef4444"
+
+        body = f"""
+        <div class="card">
+            <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">{f.get('date','')} {f.get('weekday','')}요일</p>
+            <h1 style="font-size:20px;font-weight:800;margin-bottom:16px;">{title}</h1>
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+                <div class="luck-circle">
+                    <svg width="80" height="80" style="transform:rotate(-90deg);" viewBox="0 0 80 80">
+                        <circle cx="40" cy="40" r="34" fill="none" stroke="#f1f5f9" stroke-width="8"/>
+                        <circle cx="40" cy="40" r="34" fill="none" stroke="{luck_color}" stroke-width="8" stroke-linecap="round" stroke-dasharray="{stroke_len} 213.6"/>
+                    </svg>
+                    <div class="luck-num" style="color:{luck_color};">{luck}</div>
+                </div>
+                <div style="flex:1;font-size:14px;color:#475569;line-height:1.6;">{f.get('fortune','')}</div>
+            </div>
+            {items_html}
+        </div>
+        <div class="card">
+            <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">Today's Lucky</div>
+            <div class="lucky-grid">{lucky_html}</div>
+        </div>"""
+
+    elif share_type == "chat":
+        msgs = data.get("messages", [])
+        msgs_html = ""
+        for m in msgs:
+            if m.get("role") == "user":
+                msgs_html += f'<div class="msg"><div class="msg-user">{m.get("content","")}</div></div>'
+            else:
+                content = m.get("content","").replace("\n\n","</p><p style='margin-top:8px;'>").replace("\n","<br>")
+                msgs_html += f'<div class="msg"><div class="msg-bot"><p>{content}</p></div></div>'
+
+        body = f"""
+        <div class="card">
+            <h1 style="font-size:20px;font-weight:800;margin-bottom:4px;">{title}</h1>
+            <p style="font-size:13px;color:#64748b;">{data.get('subtitle','사주 분석 대화')}</p>
+        </div>
+        <div class="card">
+            <h2>대화 내역</h2>
+            {msgs_html}
+        </div>"""
+
+    og_desc = data.get("ogDescription", "사주 분석 결과를 확인해보세요.")
+
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} - 사주고</title>
+<meta property="og:title" content="{title} - 사주고">
+<meta property="og:description" content="{og_desc}">
+<meta property="og:type" content="website">
+<style>{css}</style>
+</head>
+<body>
+<div class="wrap">
+{body}
+<a href="{app_url}" class="cta">사주고에서 나도 사주보기</a>
+<div class="footer">사주고 (sajugo.shop) - AI 사주 분석 서비스</div>
+</div>
+</body>
+</html>"""
+
+
+@app.get("/share")
+async def share_page(d: str = ""):
+    if not d:
+        raise HTTPException(status_code=400, detail="공유 데이터가 없습니다.")
+    data = _decode_share_data(d)
+    if not data:
+        raise HTTPException(status_code=400, detail="잘못된 공유 링크입니다.")
+    html = _render_share_html(data)
+    return HTMLResponse(content=html)
+
+
 # ─────── 프론트엔드 정적 파일 서빙 ───────
 STATIC_DIR = Path(__file__).parent / "static"
 

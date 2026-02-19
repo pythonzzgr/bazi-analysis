@@ -9,11 +9,14 @@ import {
   Circle, 
   Leaf,
   ArrowLeft,
-  Lock
+  Lock,
+  Share2,
+  Check
 } from 'lucide-react';
 import type { AnalysisData } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { buildAnalysisShareUrl, copyToClipboard } from '@/lib/share';
 
 interface Props {
   analysis: AnalysisData;
@@ -50,6 +53,7 @@ const ELEMENT_ICONS: Record<string, typeof Leaf> = {
 
 export default function ResultDashboard({ analysis, messages, onSendMessage, isLoading, onGoBack, canChat = true }: Props) {
   const [input, setInput] = useState("");
+  const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,9 +98,20 @@ export default function ResultDashboard({ analysis, messages, onSendMessage, isL
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">{analysis.eight_characters.name}님의 사주</h1>
           </div>
         </div>
-        <div className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm">
-          <User className="text-slate-400 w-5 h-5" />
-        </div>
+        <button
+          onClick={async () => {
+            const url = buildAnalysisShareUrl(analysis, messages);
+            const ok = await copyToClipboard(url);
+            if (ok) {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }
+          }}
+          className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          title="공유하기"
+        >
+          {copied ? <Check className="text-emerald-500 w-5 h-5" /> : <Share2 className="text-slate-400 w-5 h-5" />}
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto pb-24 px-6 space-y-6">

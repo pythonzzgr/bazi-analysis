@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Sun, Heart, Briefcase, Activity, Palette, Hash, Gift, AlertTriangle, RefreshCw, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Sun, Heart, Briefcase, Activity, Palette, Hash, Gift, AlertTriangle, Share2, Check } from 'lucide-react';
 import { getDailyFortune, type DailyFortuneData, type AnalyzeRequest, type HistoryEntry } from '@/lib/api';
 import type { SessionUser } from '@/lib/auth';
 import { hasProfile } from '@/lib/auth';
+import { buildFortuneShareUrl, copyToClipboard } from '@/lib/share';
 
 interface Props {
   user: SessionUser;
@@ -46,59 +47,63 @@ function getLuckLabel(index: number): string {
   return '주의';
 }
 
-function buildRequestFromProfile(user: SessionUser): (AnalyzeRequest & { user_id: string }) | null {
-  if (!hasProfile(user)) return null;
-  return {
-    name: user.displayName,
-    year: user.birthYear!,
-    month: user.birthMonth!,
-    day: user.birthDay!,
-    hour: user.birthHour ?? 12,
-    minute: user.birthMinute ?? 0,
-    gender: user.gender!,
-    is_lunar: user.isLunar ?? false,
-    is_leap_month: user.isLeapMonth ?? false,
-    user_id: user.id,
-  };
-}
-
 export default function DailyFortune({ user, history }: Props) {
   const [fortune, setFortune] = useState<DailyFortuneData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const [useProfile, setUseProfile] = useState(hasProfile(user));
+  const [copied, setCopied] = useState(false);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
     const cached = getCachedFortune();
-    if (cached) setFortune(cached);
-  }, []);
+    if (cached) {
+      setFortune(cached);
+      return;
+    }
 
-  const fetchFortune = async () => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
+    let req: (AnalyzeRequest & { user_id: string }) | null = null;
+
+    if (hasProfile(user)) {
+      req = {
+        name: user.displayName,
+        year: user.birthYear!,
+        month: user.birthMonth!,
+        day: user.birthDay!,
+        hour: user.birthHour ?? 12,
+        minute: user.birthMinute ?? 0,
+        gender: user.gender!,
+        is_lunar: user.isLunar ?? false,
+        is_leap_month: user.isLeapMonth ?? false,
+        user_id: user.id,
+      };
+    } else if (history.length > 0) {
+      req = { ...history[0].request, user_id: user.id };
+    }
+
+    if (!req) return;
+
     setIsLoading(true);
-    setError('');
+    getDailyFortune(req)
+      .then((data) => {
+        setFortune(data);
+        localStorage.setItem(FORTUNE_CACHE_KEY, JSON.stringify(data));
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : '운세 생성에 실패했습니다.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [user, history]);
 
-    try {
-      let req: AnalyzeRequest & { user_id: string };
-
-      if (useProfile && hasProfile(user)) {
-        req = buildRequestFromProfile(user)!;
-      } else if (history.length > 0) {
-        const entry = history[selectedIdx];
-        if (!entry) return;
-        req = { ...entry.request, user_id: user.id };
-      } else {
-        setError('프로필에 생년월일을 설정하거나, 사주 분석을 먼저 진행해주세요.');
-        return;
-      }
-
-      const data = await getDailyFortune(req);
-      setFortune(data);
-      localStorage.setItem(FORTUNE_CACHE_KEY, JSON.stringify(data));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '운세 생성에 실패했습니다.');
-    } finally {
-      setIsLoading(false);
+  const handleShare = async () => {
+    if (!fortune) return;
+    const url = buildFortuneShareUrl(fortune);
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -114,101 +119,20 @@ export default function DailyFortune({ user, history }: Props) {
     );
   }
 
-  if (!fortune && !isLoading) {
-    return (
-      <div className="flex-1 flex flex-col px-6 py-6">
-        <div className="glass-card rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-lg">
-          <div className="flex items-center gap-2 mb-5">
-            <Sun className="w-5 h-5 text-amber-500" />
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">오늘의 운세</h3>
-          </div>
-
-          {hasProfile(user) && history.length > 0 && (
-            <div className="mb-4 flex gap-2">
-              <button
-                onClick={() => setUseProfile(true)}
-                className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  useProfile
-                    ? 'bg-primary/10 border-primary text-primary border'
-                    : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500'
-                }`}
-              >
-                내 프로필
-              </button>
-              <button
-                onClick={() => setUseProfile(false)}
-                className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  !useProfile
-                    ? 'bg-primary/10 border-primary text-primary border'
-                    : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500'
-                }`}
-              >
-                분석 기록
-              </button>
-            </div>
-          )}
-
-          {useProfile && hasProfile(user) ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-              <span className="font-semibold text-slate-700 dark:text-slate-200">{user.displayName}</span>님의
-              프로필 ({user.birthYear}.{user.birthMonth}.{user.birthDay})로 운세를 확인합니다.
-            </p>
-          ) : (
-            <>
-              {history.length > 1 && (
-                <div className="mb-4">
-                  <p className="text-xs text-slate-400 mb-2">운세를 볼 사주를 선택하세요</p>
-                  <div className="space-y-2">
-                    {history.slice(0, 5).map((entry, idx) => (
-                      <button
-                        key={entry.id}
-                        onClick={() => setSelectedIdx(idx)}
-                        className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all ${
-                          selectedIdx === idx
-                            ? 'bg-primary/10 border-primary text-primary font-semibold border'
-                            : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        {entry.name} ({entry.request.year}.{entry.request.month}.{entry.request.day})
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {history.length === 1 && (
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{history[0].name}</span>님의 사주로 오늘의 운세를 확인해보세요.
-                </p>
-              )}
-            </>
-          )}
-
-          {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
-
-          <button
-            onClick={fetchFortune}
-            disabled={isLoading}
-            className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-[0_8px_16px_-4px_rgba(245,158,11,0.4)] hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isLoading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <Sparkles size={16} />
-                오늘의 운세 보기
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-sm text-slate-400">운세를 생성하고 있습니다...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
+        <AlertTriangle className="w-10 h-10 text-red-300 mb-4" />
+        <p className="text-sm text-red-400">{error}</p>
       </div>
     );
   }
@@ -228,12 +152,14 @@ export default function DailyFortune({ user, history }: Props) {
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs text-slate-400">{fortune.date} {fortune.weekday}요일</p>
             <button
-              onClick={fetchFortune}
-              disabled={isLoading}
+              onClick={handleShare}
               className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title="새로고침"
+              title="공유하기"
             >
-              <RefreshCw size={14} className="text-slate-400" />
+              {copied
+                ? <Check size={14} className="text-emerald-500" />
+                : <Share2 size={14} className="text-slate-400" />
+              }
             </button>
           </div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
