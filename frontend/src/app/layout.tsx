@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Ba Zi Analysis',
-  description: 'Saju Analysis Dashboard',
+  title: '쉽게 보는 사주, 사주 고!',
+  description: 'AI 사주 분석 서비스 - 사주고',
 }
 
 export default function RootLayout({
