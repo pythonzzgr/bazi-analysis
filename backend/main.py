@@ -141,6 +141,11 @@ class SetRoleRequest(BaseModel):
     role: str = Field(..., description="변경할 역할 (admin/user+/user)")
 
 
+class RestoreSessionRequest(BaseModel):
+    analysis_id: str = Field(..., description="분석 ID")
+    user_id: str = Field("", description="사용자 ID (권한 확인용)")
+
+
 class DailyFortuneRequest(BaseModel):
     user_id: str = Field(..., description="사용자 ID")
     name: str = Field(..., description="이름")
@@ -371,6 +376,30 @@ async def stream_chat(request: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ─────── 세션 복원 (히스토리에서 추가 대화) ───────
+
+@app.post("/api/session/restore")
+async def restore_session(request: RestoreSessionRequest):
+    _check_premium(request.user_id)
+
+    entry = get_analysis(request.analysis_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="분석 기록을 찾을 수 없습니다.")
+
+    try:
+        text = analysis_to_text(entry["analysis"])
+        session_id = str(uuid.uuid4())
+        agent.create_session(session_id, text, entry["analysis"])
+
+        messages = get_chat_messages(request.analysis_id)
+        if messages:
+            agent.restore_messages(session_id, messages)
+
+        return {"session_id": session_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"세션 복원 중 오류: {str(e)}")
 
 
 # ─────── 히스토리 API ───────

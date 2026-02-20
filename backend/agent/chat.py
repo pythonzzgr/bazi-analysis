@@ -201,6 +201,16 @@ class SajuChatAgent:
 
         session["messages"].append({"role": "assistant", "content": full_text})
 
+    def restore_messages(self, session_id: str, messages: list[dict]):
+        """기존 채팅 메시지를 세션에 복원합니다."""
+        if session_id not in self.sessions:
+            return
+        session = self.sessions[session_id]
+        if messages and messages[0]["role"] == "assistant":
+            session["messages"].append({"role": "user", "content": "사주 해석을 해주세요."})
+        for msg in messages:
+            session["messages"].append({"role": msg["role"], "content": msg["content"]})
+
     def has_session(self, session_id: str) -> bool:
         return session_id in self.sessions
 

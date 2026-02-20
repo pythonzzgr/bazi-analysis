@@ -281,6 +281,24 @@ export async function getDailyFortune(
   }
 }
 
+// ─────── 세션 복원 API ───────
+
+export async function restoreSession(
+  analysisId: string,
+  userId: string,
+): Promise<{ session_id: string }> {
+  const res = await fetch(`${API_BASE}/session/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ analysis_id: analysisId, user_id: userId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "세션 복원에 실패했습니다.");
+  }
+  return res.json();
+}
+
 // ─────── 히스토리 API ───────
 
 export interface HistoryEntry {

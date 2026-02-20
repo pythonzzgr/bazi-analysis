@@ -10,6 +10,7 @@ import {
   analyzeSaju,
   streamReading,
   streamChat,
+  restoreSession,
   fetchHistory,
   fetchHistoryDetail,
   type AnalyzeRequest,
@@ -152,6 +153,15 @@ export default function Home() {
     setAnalysisId(entry.id);
     setCurrentRequest(entry.request);
     setView("result");
+
+    if (user && isPremium(user)) {
+      try {
+        const { session_id } = await restoreSession(entry.id, user.id);
+        setSessionId(session_id);
+      } catch (e) {
+        console.error("[Session] 세션 복원 실패:", e);
+      }
+    }
   };
 
   const handleAuth = (sessionUser: SessionUser) => {
