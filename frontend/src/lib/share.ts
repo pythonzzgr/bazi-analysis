@@ -3,10 +3,19 @@ import type { AnalysisData, DailyFortuneData } from "./api";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://sajugo.shop";
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+  }
+  return btoa(parts.join(""));
+}
+
 function compressAndEncode(data: object): string {
   const json = JSON.stringify(data);
   const compressed = pako.deflate(new TextEncoder().encode(json));
-  let base64 = btoa(String.fromCharCode(...compressed));
+  let base64 = uint8ToBase64(compressed);
   base64 = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return base64;
 }

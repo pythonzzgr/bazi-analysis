@@ -99,11 +99,15 @@ export default function DailyFortune({ user, history }: Props) {
 
   const handleShare = async () => {
     if (!fortune) return;
-    const url = buildFortuneShareUrl(fortune);
-    const ok = await copyToClipboard(url);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    try {
+      const url = buildFortuneShareUrl(fortune);
+      const ok = await copyToClipboard(url);
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      console.error("[Share] 운세 공유 URL 생성 실패:", e);
     }
   };
 

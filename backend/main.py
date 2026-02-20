@@ -446,8 +446,14 @@ async def daily_fortune(request: DailyFortuneRequest):
 
 # ─────── 공유 페이지 (서버 렌더링) ───────
 
+import re
 import zlib
 import base64
+import logging
+from html import escape as _esc
+
+logger = logging.getLogger(__name__)
+
 
 def _decode_share_data(encoded: str) -> dict | None:
     try:
@@ -455,13 +461,66 @@ def _decode_share_data(encoded: str) -> dict | None:
         raw = base64.urlsafe_b64decode(padded)
         decompressed = zlib.decompress(raw)
         return json.loads(decompressed)
-    except Exception:
+    except Exception as e:
+        logger.warning("[Share] 공유 데이터 디코딩 실패: %s (data_len=%d)", e, len(encoded))
         return None
+
+
+def _md_to_html(text: str) -> str:
+    """Markdown 텍스트를 안전한 HTML로 변환 (이스케이프 포함)."""
+    safe = _esc(text)
+
+    safe = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', safe)
+    safe = re.sub(r'\*(.+?)\*', r'<em>\1</em>', safe)
+
+    lines = safe.split('\n')
+    result: list[str] = []
+    in_list = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        heading = re.match(r'^(#{1,4})\s+(.+)$', stripped)
+        if heading:
+            if in_list:
+                result.append('</ul>')
+                in_list = False
+            level = len(heading.group(1))
+            tag = f'h{min(level + 1, 4)}'
+            result.append(f'<{tag} style="font-weight:700;margin:12px 0 6px;">{heading.group(2)}</{tag}>')
+            continue
+
+        if re.match(r'^[-*]\s+', stripped):
+            content = re.sub(r'^[-*]\s+', '', stripped)
+            if not in_list:
+                result.append('<ul style="padding-left:20px;margin:8px 0;">')
+                in_list = True
+            result.append(f'<li style="margin:2px 0;">{content}</li>')
+            continue
+
+        if in_list:
+            result.append('</ul>')
+            in_list = False
+
+        if re.match(r'^&gt;\s*', stripped):
+            quote_content = re.sub(r'^&gt;\s*', '', stripped)
+            result.append(f'<div style="padding:8px 12px;border-left:3px solid #94a3b8;color:#64748b;margin:8px 0;font-style:italic;">{quote_content}</div>')
+            continue
+
+        if stripped == '':
+            result.append('<div style="height:12px;"></div>')
+        else:
+            result.append(f'<p style="margin:4px 0;">{stripped}</p>')
+
+    if in_list:
+        result.append('</ul>')
+
+    return '\n'.join(result)
 
 
 def _render_share_html(data: dict) -> str:
     share_type = data.get("type", "analysis")
-    title = data.get("title", "사주 분석 결과")
+    title = _esc(data.get("title", "사주 분석 결과"))
     app_url = os.getenv("APP_URL", "https://sajugo.shop")
 
     css = """
@@ -509,30 +568,36 @@ def _render_share_html(data: dict) -> str:
             pi = p.get(key, {})
             pillar_html += f"""<div class="pillar">
                 <div class="pillar-label">{label}</div>
-                <div class="pillar-cell">{pi.get('stem','')}</div>
-                <div class="pillar-cell">{pi.get('branch','')}</div>
+                <div class="pillar-cell">{_esc(str(pi.get('stem','')))}</div>
+                <div class="pillar-cell">{_esc(str(pi.get('branch','')))}</div>
             </div>"""
 
         el_html = ""
         el_class_map = {"목":"el-wood","화":"el-fire","토":"el-earth","금":"el-metal","수":"el-water"}
         for e in el:
             cls = el_class_map.get(e.get("name",""), "el-wood")
+            name = _esc(str(e.get('name','')))
+            hanja = _esc(str(e.get('hanja','')))
+            ratio = int(e.get('ratio', 0))
             el_html += f"""<div class="el-bar">
-                <span class="el-name">{e.get('name','')} ({e.get('hanja','')})</span>
-                <div class="el-track"><div class="el-fill {cls}" style="width:{e.get('ratio',0)}%"></div></div>
-                <span class="el-pct">{e.get('ratio',0)}%</span>
+                <span class="el-name">{name} ({hanja})</span>
+                <div class="el-track"><div class="el-fill {cls}" style="width:{ratio}%"></div></div>
+                <span class="el-pct">{ratio}%</span>
             </div>"""
 
-        reading_html = reading.replace("\n\n", "</p><p style='margin-top:12px;'>").replace("\n", "<br>")
+        reading_html = _md_to_html(reading)
+        day_master = _esc(str(data.get('dayMaster', '')))
+        strength = _esc(str(data.get('strength', '')))
+        yong_shin = _esc(str(data.get('yongShin', '')))
 
         body = f"""
         <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                <span class="badge" style="background:#EFF6FF;color:#137FEC;">Day Master: {data.get('dayMaster','')}</span>
-                <span style="font-size:12px;color:#94a3b8;">{data.get('strength','')}</span>
+                <span class="badge" style="background:#EFF6FF;color:#137FEC;">Day Master: {day_master}</span>
+                <span style="font-size:12px;color:#94a3b8;">{strength}</span>
             </div>
             <h1 style="font-size:22px;font-weight:800;margin:8px 0 4px;">{title}</h1>
-            <p style="font-size:13px;color:#64748b;">용신: {data.get('yongShin','')}</p>
+            <p style="font-size:13px;color:#64748b;">용신: {yong_shin}</p>
             <div class="pillars">{pillar_html}</div>
         </div>
         <div class="card">
@@ -541,12 +606,12 @@ def _render_share_html(data: dict) -> str:
         </div>
         <div class="card">
             <h2>상세 해석</h2>
-            <div style="font-size:14px;line-height:1.8;color:#334155;"><p>{reading_html}</p></div>
+            <div style="font-size:14px;line-height:1.8;color:#334155;">{reading_html}</div>
         </div>"""
 
     elif share_type == "fortune":
         f = data.get("fortune", {})
-        luck = f.get("luck_index", 50)
+        luck = int(f.get("luck_index", 50))
         stroke_len = (luck / 100) * 213.6
 
         fortune_items = []
@@ -559,22 +624,25 @@ def _render_share_html(data: dict) -> str:
         for icon, color, label, text in fortune_items:
             items_html += f"""<div class="fortune-row">
                 <div class="fortune-icon" style="background:{color}15;">{icon}</div>
-                <div><div class="fortune-label" style="color:{color};">{label}</div><div class="fortune-text">{text}</div></div>
+                <div><div class="fortune-label" style="color:{color};">{label}</div><div class="fortune-text">{_esc(str(text))}</div></div>
             </div>"""
 
         lucky_html = ""
         if f.get("lucky_color"):
-            lucky_html += f'<div><div class="lucky-sub">행운 색상</div><div class="lucky-item">{f["lucky_color"]}</div></div>'
+            lucky_html += f'<div><div class="lucky-sub">행운 색상</div><div class="lucky-item">{_esc(str(f["lucky_color"]))}</div></div>'
         if f.get("lucky_number"):
-            lucky_html += f'<div><div class="lucky-sub">행운 숫자</div><div class="lucky-item">{f["lucky_number"]}</div></div>'
+            lucky_html += f'<div><div class="lucky-sub">행운 숫자</div><div class="lucky-item">{_esc(str(f["lucky_number"]))}</div></div>'
         if f.get("lucky_item"):
-            lucky_html += f'<div><div class="lucky-sub">행운 아이템</div><div class="lucky-item">{f["lucky_item"]}</div></div>'
+            lucky_html += f'<div><div class="lucky-sub">행운 아이템</div><div class="lucky-item">{_esc(str(f["lucky_item"]))}</div></div>'
 
         luck_color = "#10b981" if luck >= 80 else "#3b82f6" if luck >= 60 else "#f59e0b" if luck >= 40 else "#ef4444"
+        fortune_text = _esc(str(f.get('fortune', '')))
+        fortune_date = _esc(str(f.get('date', '')))
+        fortune_weekday = _esc(str(f.get('weekday', '')))
 
         body = f"""
         <div class="card">
-            <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">{f.get('date','')} {f.get('weekday','')}요일</p>
+            <p style="font-size:12px;color:#94a3b8;margin-bottom:4px;">{fortune_date} {fortune_weekday}요일</p>
             <h1 style="font-size:20px;font-weight:800;margin-bottom:16px;">{title}</h1>
             <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
                 <div class="luck-circle">
@@ -584,7 +652,7 @@ def _render_share_html(data: dict) -> str:
                     </svg>
                     <div class="luck-num" style="color:{luck_color};">{luck}</div>
                 </div>
-                <div style="flex:1;font-size:14px;color:#475569;line-height:1.6;">{f.get('fortune','')}</div>
+                <div style="flex:1;font-size:14px;color:#475569;line-height:1.6;">{fortune_text}</div>
             </div>
             {items_html}
         </div>
@@ -598,29 +666,31 @@ def _render_share_html(data: dict) -> str:
         msgs_html = ""
         for m in msgs:
             if m.get("role") == "user":
-                msgs_html += f'<div class="msg"><div class="msg-user">{m.get("content","")}</div></div>'
+                msgs_html += f'<div class="msg"><div class="msg-user">{_esc(str(m.get("content","")))}</div></div>'
             else:
-                content = m.get("content","").replace("\n\n","</p><p style='margin-top:8px;'>").replace("\n","<br>")
-                msgs_html += f'<div class="msg"><div class="msg-bot"><p>{content}</p></div></div>'
+                msgs_html += f'<div class="msg"><div class="msg-bot">{_md_to_html(str(m.get("content","")))}</div></div>'
+
+        subtitle = _esc(str(data.get('subtitle', '사주 분석 대화')))
 
         body = f"""
         <div class="card">
             <h1 style="font-size:20px;font-weight:800;margin-bottom:4px;">{title}</h1>
-            <p style="font-size:13px;color:#64748b;">{data.get('subtitle','사주 분석 대화')}</p>
+            <p style="font-size:13px;color:#64748b;">{subtitle}</p>
         </div>
         <div class="card">
             <h2>대화 내역</h2>
             {msgs_html}
         </div>"""
 
-    og_desc = data.get("ogDescription", "사주 분석 결과를 확인해보세요.")
+    og_desc = _esc(data.get("ogDescription", "사주 분석 결과를 확인해보세요."), quote=True)
+    title_attr = _esc(data.get("title", "사주 분석 결과"), quote=True)
 
     return f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} - 사주고</title>
-<meta property="og:title" content="{title} - 사주고">
+<meta property="og:title" content="{title_attr} - 사주고">
 <meta property="og:description" content="{og_desc}">
 <meta property="og:type" content="website">
 <style>{css}</style>

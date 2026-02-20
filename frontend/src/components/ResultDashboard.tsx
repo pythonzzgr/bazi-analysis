@@ -100,11 +100,15 @@ export default function ResultDashboard({ analysis, messages, onSendMessage, isL
         </div>
         <button
           onClick={async () => {
-            const url = buildAnalysisShareUrl(analysis, messages);
-            const ok = await copyToClipboard(url);
-            if (ok) {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
+            try {
+              const url = buildAnalysisShareUrl(analysis, messages);
+              const ok = await copyToClipboard(url);
+              if (ok) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }
+            } catch (e) {
+              console.error("[Share] 공유 URL 생성 실패:", e);
             }
           }}
           className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
